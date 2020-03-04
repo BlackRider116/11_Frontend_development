@@ -1,35 +1,34 @@
-// const baseUrl = 'https://backend-09-server.herokuapp.com';
-const baseUrl = 'http://localhost:9999';
+const baseUrl = 'https://backend-dz11.herokuapp.com';
+// const baseUrl = 'http://localhost:9999';
 
 let firstSeenId = 0;
 let lastSeenId = 0;
-
-let lastPosts = [];
 
 const rootEl = document.getElementById('root');
 
 const addFormEl = document.createElement('form');
 addFormEl.innerHTML = `
-<form>
-  <div class="form-row">
-    <div class="col-5">
-    <input class="form-control" placeholder="Введите текст" data-id="link">
-    </div>
+<div class="input-group">
+  <input type="text" class="form-control" placeholder="Введите текст" data-id="link">
+  <div class="input-group-append" id="button-addon4">
     <input type="hidden" name="type">
     <input type="hidden" name="url">
-    <input data-id="files" type="file" name="media">
-    <button data-id="record" class="btn btn-light"> 🔴 </button>
-    <button data-id="send" class="btn btn-primary">Добавить</button>
+    <input data-id="files" type="file" name="media" style="visibility: hidden; opacity: 0.0001; height: 1px; width: 1px;">
+    <button data-action="upload" class="btn btn-outline-secondary" type="button">Загрузить</button>
+    <button data-id="record" class="btn btn-outline-secondary" type="button">Записать</button>
+    <button data-id="send" class="btn btn-outline-primary" type="button">Добавить</button>
   </div>
-</form>
+</div>
 `;
 rootEl.appendChild(addFormEl);//🎤 🔴 light
 
+// функция показа новых записей
 const newPostsBtn = document.createElement('button');
 newPostsBtn.className = 'btn btn-primary btn-block mt-1';
 newPostsBtn.textContent = 'Показать новые записи';
 newPostsBtn.style.display = "none";
 newPostsBtn.addEventListener('click', (ev) => {
+    ev.preventDefault();
     fetch(`${baseUrl}/posts/${firstSeenId}`)
         .then(response => {
             if (!response.ok) {
@@ -38,8 +37,7 @@ newPostsBtn.addEventListener('click', (ev) => {
             return response.json();
         }).then(function (data) {
             firstSeenId = 0;
-            lastPosts.unshift(...data.reverse());
-            rebuildList(postsEl, lastPosts);
+            rebuildList(postsEl, data, 1);
             newPostsBtn.style.display = "none";
         }).catch(error => {
             console.log(error);
@@ -48,7 +46,7 @@ newPostsBtn.addEventListener('click', (ev) => {
 });
 rootEl.appendChild(newPostsBtn);
 
-
+// поле ввода текста
 const sendEl = document.querySelector('[data-id=send]');
 const linkEl = addFormEl.querySelector('[data-id=link]');
 linkEl.value = localStorage.getItem('content');
@@ -56,9 +54,14 @@ linkEl.addEventListener('input', (evt) => {
     localStorage.setItem('content', evt.currentTarget.value);
 });
 
+// загрузка медиа
+const uploadEl = document.querySelector('[data-action=upload]');
 const typeEl = document.querySelector('input[name=type]');
 const urlEl = document.querySelector('input[name=url]');
-const mediaEl = document.querySelector('input[name=media]');
+const mediaEl = document.querySelector('[data-id=files]');
+uploadEl.addEventListener('click', evt => {
+    mediaEl.dispatchEvent(new MouseEvent('click'));
+});
 mediaEl.addEventListener('change', ev => {
     ev.preventDefault();
     mediaRec.disabled = true;
@@ -85,6 +88,7 @@ mediaEl.addEventListener('change', ev => {
     });
 });
 
+// кнопка записи
 const mediaRec = addFormEl.querySelector('[data-id=record]');
 mediaRec.addEventListener('click', function (ev) {
     ev.preventDefault();
@@ -100,10 +104,10 @@ mediaRec.addEventListener('click', function (ev) {
         document.body.appendChild(alertEl);
         return;
     }
-    navigator.mediaDevices.getUserMedia({audio: true, video: true})
+    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
         .then(stream => {
             sendEl.disabled = true;
-            mediaEl.disabled = true;
+            uploadEl.disabled = true;
             const mediaRecorder = new MediaRecorder(stream, {
                 mediaType: 'video/webm',
             });
@@ -147,7 +151,7 @@ mediaRec.addEventListener('click', function (ev) {
 })
 
 
-
+// кнопка добавить пост
 addFormEl.querySelector('[data-id=send]').addEventListener('click', function (ev) {
     ev.preventDefault();
     const post = {
@@ -166,17 +170,16 @@ addFormEl.querySelector('[data-id=send]').addEventListener('click', function (ev
         }
         return response.json();
     }).then(data => {
-        // console.log(data)
         linkEl.value = '';
         typeEl.value = '';
         urlEl.value = '';
         mediaEl.value = '';
-        mediaEl.disabled = false;
+        uploadEl.disabled = false;
         mediaRec.disabled = false;
         localStorage.clear();
-        lastPosts.unshift(data);
         firstSeenId = data.id;
-        rebuildList(postsEl, lastPosts);
+
+        rebuildList(postsEl, Array(data), 1);
     }).catch(error => {
         console.log(error)
     });
@@ -186,6 +189,7 @@ addFormEl.querySelector('[data-id=send]').addEventListener('click', function (ev
 const postsEl = document.createElement('div');
 rootEl.appendChild(postsEl);
 
+// первичный GET запрос (отобразить 5 постов)
 const startGet = fetch(`${baseUrl}/posts/seenPosts/${lastSeenId}`)
 startGet.then(response => {
     if (!response.ok) {
@@ -194,69 +198,75 @@ startGet.then(response => {
     return response.json();
 }).then(function (data) {
     if (data.length !== 0) {
-        if (data.length < 5) {
-            lastPosts.push(...data.reverse());
-        } else {
+        if (data.length >= 5) {
             lastSeenId = data[data.length - 5].id;
-            lastPosts.push(...data.reverse());
             lastPostsBtn.style.display = "block";
         }
-        rebuildList(postsEl, lastPosts)
+        rebuildList(postsEl, data.reverse())
     }
 }).catch(error => {
     console.log(error);
 });
 
+// определяет тип поста
+function returnPost(post) {
+    if (post.type === '') {
+        return `
+        <div class="card-body">
+            <p style='font-size:20px'>${post.content}</p>
+            <button class="btn" data-id="likes">♡ ${post.likes}</button>
+            <button class="btn btn-primary" data-action="like">👍</button>
+            <button class="btn btn-danger" data-action="dislike">👎</button>
+            <button class="btn btn-light" data-action="delete">Удалить пост</button>
+            
+        </div>
+    `;
+    } else if (post.type === 'image') {
+        return `
+        <img src="${post.file}" class="card-img-top"></img>
+        <div class="card-body">
+            <p style='font-size:20px'>${post.content}</p>
+            <button class="btn" data-id="likes">♡ ${post.likes}</button>
+            <button class="btn btn-primary" data-action="like">👍</button>
+            <button class="btn btn-danger" data-action="dislike">👎</button>
+            <button class="btn btn-light" data-action="delete">Удалить пост</button>
+            
+        </div>
+    `;
+    } else if (post.type === 'audio') {
+        return `
+        <audio src="${post.file}" class="card-img-top" controls></audio>
+        <div class="card-body">
+            <p style='font-size:20px'>${post.content}</p>
+            <button class="btn" data-id="likes">♡ ${post.likes}</button>
+            <button class="btn btn-primary" data-action="like">👍</button>
+            <button class="btn btn-danger" data-action="dislike">👎</button>
+            <button class="btn btn-light" data-action="delete">Удалить пост</button>
+            
+        </div>
+    `;
+    } else if (post.type === 'video') {
+        return `
+        <video src="${post.file}" width="960" height="540" class="embed-responsive embed-responsive-16by9 card-img-top" controls></video>
+        <div class="card-body">
+            <p style='font-size:20px'>${post.content}</p>
+            <button class="btn" data-id="likes">♡ ${post.likes}</button>
+            <button class="btn btn-primary" data-action="like">👍</button>
+            <button class="btn btn-danger" data-action="dislike">👎</button>
+            <button class="btn btn-light" data-action="delete">Удалить пост</button>
+            
+        </div>
+    `;
+    };
+}
 
-function rebuildList(containerEl, items) {
-    containerEl.innerHTML = '';
-    for (const item of items) {
-        const postEl = document.createElement('div');
+
+// рисует посты
+function rebuildList(containerEl, items, arrangement) {
+    for (let item of items) {
+        const postEl = document.createElement('li');
         postEl.className = 'card mb-2';
-        if (item.type !== 'image' && item.type !== 'audio' && item.type !== 'video') {
-            postEl.innerHTML = `
-                <div class="card-body">
-                    <div class="card-text">${item.content}</div>
-                    <button class="btn">♡ ${item.likes}</button>
-                    <button class="btn btn-primary" data-action="like">👍</button>
-                    <button class="btn btn-danger" data-action="dislike">👎</button>
-                    <button class="btn btn-light" data-action="delete">Удалить пост</button>
-                </div>
-            `;
-        } else if (item.type === 'image') {
-            postEl.innerHTML = `
-                <img src="${item.file}" class="card-img-top"></img>
-                <div class="card-body">
-                    <p style='font-size:20px'>${item.content}</p>
-                    <button class="btn">♡ ${item.likes}</button>
-                    <button class="btn btn-primary" data-action="like">👍</button>
-                    <button class="btn btn-danger" data-action="dislike">👎</button>
-                    <button class="btn btn-light" data-action="delete">Удалить пост</button>
-                </div>
-            `;
-        } else if (item.type === 'audio') {
-            postEl.innerHTML = `
-                <audio src="${item.file}" class="card-img-top" controls></audio>
-                <div class="card-body">
-                    <p style='font-size:20px'>${item.content}</p>
-                    <button class="btn">♡ ${item.likes}</button>
-                    <button class="btn btn-primary" data-action="like">👍</button>
-                    <button class="btn btn-danger" data-action="dislike">👎</button>
-                    <button class="btn btn-light" data-action="delete">Удалить пост</button>
-                </div>
-            `;
-        } else if (item.type === 'video') {
-            postEl.innerHTML = `
-                <video src="${item.file}" class="card-img-top" controls></video>
-                <div class="card-body">
-                    <p style='font-size:20px'>${item.content}</p>
-                    <button class="btn">♡ ${item.likes}</button>
-                    <button class="btn btn-primary" data-action="like">👍</button>
-                    <button class="btn btn-danger" data-action="dislike">👎</button>
-                    <button class="btn btn-light" data-action="delete">Удалить пост</button>
-                </div>
-            `;
-        };
+        postEl.innerHTML = returnPost(item)
 
         postEl.querySelector('[data-action=delete]').addEventListener('click', function () {
             fetch(`${baseUrl}/posts/${item.id}`, {
@@ -267,11 +277,7 @@ function rebuildList(containerEl, items) {
                 }
                 return response.json();
             }).then(data => {
-                const index = lastPosts.findIndex((post) => {
-                    return post.id === item.id
-                })
-                lastPosts.splice(index, 1)
-                rebuildList(postsEl, lastPosts);
+                containerEl.removeChild(postEl);
             }).catch(error => {
                 console.log(error)
             });
@@ -287,11 +293,7 @@ function rebuildList(containerEl, items) {
                 }
                 return response.json();
             }).then(data => {
-                const index = lastPosts.findIndex((post) => {
-                    return post.id === item.id
-                })
-                lastPosts[index].likes++;
-                rebuildList(postsEl, lastPosts);
+                postEl.querySelector('[data-id=likes]').textContent =`♡ ${data.likes}`
             }).catch(error => {
                 console.log(error)
             });
@@ -307,25 +309,27 @@ function rebuildList(containerEl, items) {
                 }
                 return response.json();
             }).then(data => {
-                const index = lastPosts.findIndex((post) => {
-                    return post.id === item.id
-                })
-                lastPosts[index].likes--;
-                rebuildList(postsEl, lastPosts);
+                postEl.querySelector('[data-id=likes]').textContent =`♡ ${data.likes}`
             }).catch(error => {
                 console.log(error)
             });
         });
-        containerEl.appendChild(postEl);
+        if (arrangement === 1) {
+            containerEl.insertBefore(postEl, containerEl.firstElementChild);
+        } else {
+            containerEl.appendChild(postEl)
+        }
     }
 };
 
 
+//кнопка "Показать еще посты"
 const lastPostsBtn = document.createElement('button');
 lastPostsBtn.className = 'btn btn-primary btn-block mt-1';
 lastPostsBtn.textContent = 'Показать еще посты';
 lastPostsBtn.style.display = "none";
-lastPostsBtn.addEventListener('click', function () {
+lastPostsBtn.addEventListener('click', function (ev) {
+    ev.preventDefault();
     fetch(`${baseUrl}/posts/seenPosts/${lastSeenId}`)
         .then(response => {
             if (!response.ok) {
@@ -339,15 +343,12 @@ lastPostsBtn.addEventListener('click', function () {
             else {
                 if (data.length < 5) {
                     lastSeenId = data[data.length - 1].id;
-                    lastPosts.push(...data.reverse());
                     lastPostsBtn.style.display = "none";
                 } else {
                     lastSeenId = data[data.length - 5].id;
-                    lastPosts.push(...data.reverse());
                     lastPostsBtn.style.display = "block";
-
                 }
-                rebuildList(postsEl, lastPosts);
+                rebuildList(postsEl, data.reverse());
             }
         }).catch(error => {
             console.log(error);
@@ -355,7 +356,7 @@ lastPostsBtn.addEventListener('click', function () {
 })
 rootEl.appendChild(lastPostsBtn);
 
-
+//проверка на наличие новых постов
 setInterval(() => {
     const promise = fetch(`${baseUrl}/posts/${firstSeenId}`)
     promise.then(response => {
