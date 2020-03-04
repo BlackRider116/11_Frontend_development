@@ -208,7 +208,6 @@ startGet.then(response => {
 });
 
 
-
 function rebuildList(containerEl, items) {
     containerEl.innerHTML = '';
     for (const item of items) {
